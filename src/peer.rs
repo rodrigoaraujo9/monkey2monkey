@@ -1,6 +1,5 @@
 use crate::{Rx, Tx};
 use rand::random;
-use rand::rngs::mock;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
@@ -8,7 +7,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, stdin};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
-use tokio::time::{Duration, sleep};
 
 pub struct Monkey {
     banana: Arc<Mutex<f64>>,
@@ -77,7 +75,7 @@ impl Monkey {
         loop {
             match listener.accept().await {
                 Ok((socket, addr)) => {
-                    println!("incoming connection from {}", addr);
+                    println!("incoming registration from {}", addr);
                     let monkeys_ = monkeys.clone();
                     let sender_ = sender.clone();
                     let banana_ = banana.clone();
@@ -93,7 +91,7 @@ impl Monkey {
                         }
                     });
                 }
-                Err(e) => eprintln!("Monkey failed to accept incoming monkeys: {}", e),
+                Err(e) => eprintln!("Monkey failed to register incoming monkeys: {}", e),
             }
         }
     }
@@ -124,14 +122,14 @@ impl Monkey {
         };
 
         match cmd {
-            "LINK" => {
+            "REG" => {
                 if let (Some(address), Some(id)) = (parts.next(), parts.next()) {
                     monkeys
                         .lock()
                         .await
                         .insert(id.to_string(), address.to_string());
-                    let _ = sender.send(format!("connected with {} at {}", id, address));
-                    let response = format!("LINK/ACK/{}/{}\n", my_addr, my_id);
+                    let _ = sender.send(format!("registered {} at {}", id, address));
+                    let response = format!("REG/ACK/{}/{}\n", my_addr, my_id);
                     let _ = writer.write_all(response.as_bytes()).await;
                 }
             }
@@ -176,7 +174,7 @@ impl Monkey {
                     match input {
                         "monkeys" => {
                             let m_list = self.monkeys.lock().await;
-                            println!("{} connected to {:?}", self.id, m_list.keys().cloned().collect::<Vec<_>>());
+                            println!("{} knows {:?}", self.id, m_list.keys().cloned().collect::<Vec<_>>());
                         }
                         "banana" => {
                             let banana = *self.banana.lock().await;
@@ -191,12 +189,12 @@ impl Monkey {
                                 }
                             }
                         }
-                        _ if input.starts_with("LINK/") => {
+                        _ if input.starts_with("register/") => {
                             //LINK/{address}/{id}
                             let mut it = input.split('/');
                             let _ = it.next();
                             if let (Some(address), Some(id)) = (it.next(), it.next()) {
-                                println!("linking with {} at {}", id, address);
+                                println!("attempting to register {} at {}", id, address);
 
                                 let addr_for_spawn = address.to_string();
                                 let self_addr = self.address.clone();
@@ -208,38 +206,38 @@ impl Monkey {
                                 tokio::spawn(async move {
                                     match TcpStream::connect(&addr_for_spawn).await {
                                         Ok(mut stream) => {
-                                            let line = format!("LINK/{}/{}\n", self_addr, self_id);
+                                            let line = format!("REG/{}/{}\n", self_addr, self_id);
                                             if stream.write_all(line.as_bytes()).await.is_ok() && stream.flush().await.is_ok() {
                                                 let (r, _) = stream.into_split();
                                                 let mut r = BufReader::new(r);
                                                 let mut tmp = String::new();
                                                 if r.read_line(&mut tmp).await.is_ok() {
                                                     let parts: Vec<&str> = tmp.trim().split('/').collect();
-                                                    // LINK/ACK/addr/id
-                                                    if parts.len() == 4 && parts[0] == "LINK" && parts[1] == "ACK" {
+                                                    // REG/ACK/addr/id
+                                                    if parts.len() == 4 && parts[0] == "REG" && parts[1] == "ACK" {
                                                         let monkey_addr = parts[2];
                                                         let monkey_id = parts[3];
                                                         monkeys.lock().await.insert(monkey_id.to_string(), monkey_addr.to_string());
-                                                        println!("linked to monkey {} at {}", monkey_id, monkey_addr);
+                                                        println!("registered monkey {} at {}", monkey_id, monkey_addr);
                                                     } else {
-                                                        eprintln!("invalid LINK response from {}", address_);
+                                                        eprintln!("invalid register response from {}", address_);
                                                     }
                                                 } else {
-                                                    eprintln!("failed to receive LINK/ACK from {} at {}", id_, address_);
+                                                    eprintln!("failed to receive REG/ACK from {} at {}", id_, address_);
                                                 }
                                             } else {
-                                                eprintln!("failed to send LINK to {} at {}", id_, address_);
+                                                eprintln!("failed to send REG to {} at {}", id_, address_);
                                             }
                                         }
-                                        Err(e) => eprintln!("failed to connect to {} at {}: {}", id_, address_, e),
+                                        Err(e) => eprintln!("failed to register {} at {}: {}", id_, address_, e),
                                     }
                                 });
                             } else {
-                                println!("usage -> LINK/{{address}}/{{id}}");
+                                println!("usage -> register/{{address}}/{{id}}");
                             }
                         }
                         _ => {
-                            println!("commands -> monkeys  banana  level  LINK/{{address}}/{{id}}");
+                            println!("commands -> monkeys  banana  level  register/{{address}}/{{id}}");
                         }
                     }
                 }
