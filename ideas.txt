@@ -1,0 +1,19 @@
+peer{
+ip
+port
+peers
+}
+
+peer{
+    new
+
+    listen
+
+    message
+
+    handle_conn
+
+    conn
+}
+
+main
