@@ -8,6 +8,15 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 
+const RED: &str = "\x1b[38;2;243;139;168m"; // #f38ba8
+const GREEN: &str = "\x1b[38;2;166;227;161m"; // #a6e3a1
+const YELLOW: &str = "\x1b[38;2;249;226;175m"; // #f9e2af
+const BLUE: &str = "\x1b[38;2;137;180;250m"; // #89b4fa
+const PURPLE: &str = "\x1b[38;2;203;166;247m"; // #cba6f7
+const AQUA: &str = "\x1b[38;2;148;226;213m"; // #94e2d5
+const ORANGE: &str = "\x1b[38;2;250;179;135m"; // #fab387
+const RESET: &str = "\x1b[0m";
+
 pub struct Monkey {
     banana: Arc<Mutex<f64>>,
     id: String,
@@ -57,7 +66,7 @@ impl Monkey {
         banana: Arc<Mutex<f64>>,
         monkeys: Arc<Mutex<HashMap<String, String>>>,
         id: &str,
-        _addr: &str,
+        addr: &str,
         sender: Tx,
     ) {
         println!("mock for interact with random monkey")
@@ -75,7 +84,7 @@ impl Monkey {
         loop {
             match listener.accept().await {
                 Ok((socket, addr)) => {
-                    println!("incoming registration from {}", addr);
+                    println!("{}incoming registration from {}{}", AQUA, addr, RESET);
                     let monkeys_ = monkeys.clone();
                     let sender_ = sender.clone();
                     let banana_ = banana.clone();
@@ -87,11 +96,14 @@ impl Monkey {
                         )
                         .await
                         {
-                            eprintln!("keep_monkey_in_check error: {}", e);
+                            eprintln!("{}keep_monkey_in_check error: {}{}", RED, e, RESET);
                         }
                     });
                 }
-                Err(e) => eprintln!("Monkey failed to register incoming monkeys: {}", e),
+                Err(e) => eprintln!(
+                    "{}monkey failed to register incoming monkeys: {}{}",
+                    RED, e, RESET
+                ),
             }
         }
     }
@@ -109,7 +121,6 @@ impl Monkey {
         let mut reader = BufReader::new(read_half);
         let mut line = String::new();
 
-        // Handle single request then close
         reader.read_line(&mut line).await?;
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -142,8 +153,8 @@ impl Monkey {
                             .write_all(format!("LEVEL/ACK/{:.12}\n", *current_banana).as_bytes())
                             .await;
                         let _ = sender.send(format!(
-                            "Leveled banana with {} -> v={:.6}",
-                            monkey_id, *current_banana
+                            "{}leveled banana with {} -> v={:.6}{}",
+                            YELLOW, monkey_id, *current_banana, RESET
                         ));
                     }
                 }
@@ -174,18 +185,18 @@ impl Monkey {
                     match input {
                         "monkeys" => {
                             let m_list = self.monkeys.lock().await;
-                            println!("{} knows {:?}", self.id, m_list.keys().cloned().collect::<Vec<_>>());
+                            println!("{}{} knows {:?}{}", BLUE, self.id, m_list.keys().cloned().collect::<Vec<_>>(), RESET);
                         }
                         "banana" => {
                             let banana = *self.banana.lock().await;
-                            println!("current banana: {}", banana);
+                            println!("{}current banana: {}{}", YELLOW, banana, RESET);
                         }
                         "level" => {
                             let snapshot = { let p = self.monkeys.lock().await; p.clone() };
                             let my_banana = *self.banana.lock().await;
                             for (monkey_id, addr) in snapshot {
                                 if let Err(e) = Self::level_bananas(&addr, &self.id, my_banana, self.banana.clone()).await {
-                                    eprintln!("attempt to level banana with {}@{} failed: {}", monkey_id, addr, e);
+                                    eprintln!("{}attempt to level banana with {}@{} failed: {}{}", RED, monkey_id, addr, e, RESET);
                                 }
                             }
                         }
@@ -194,7 +205,7 @@ impl Monkey {
                             let mut it = input.split('/');
                             let _ = it.next();
                             if let (Some(address), Some(id)) = (it.next(), it.next()) {
-                                println!("attempting to register {} at {}", id, address);
+                                println!("{}attempting to register {} at {}{}", PURPLE, id, address, RESET);
 
                                 let addr_for_spawn = address.to_string();
                                 let self_addr = self.address.clone();
@@ -218,26 +229,26 @@ impl Monkey {
                                                         let monkey_addr = parts[2];
                                                         let monkey_id = parts[3];
                                                         monkeys.lock().await.insert(monkey_id.to_string(), monkey_addr.to_string());
-                                                        println!("registered monkey {} at {}", monkey_id, monkey_addr);
+                                                        println!("{}registered monkey {} at {}{}", GREEN, monkey_id, monkey_addr, RESET);
                                                     } else {
-                                                        eprintln!("invalid register response from {}", address_);
+                                                        eprintln!("{}invalid register response from {}{}", RED, address_, RESET);
                                                     }
                                                 } else {
-                                                    eprintln!("failed to receive REG/ACK from {} at {}", id_, address_);
+                                                    eprintln!("{}failed to receive REG/ACK from {} at {}{}", RED, id_, address_, RESET);
                                                 }
                                             } else {
-                                                eprintln!("failed to send REG to {} at {}", id_, address_);
+                                                eprintln!("{}failed to send REG to {} at {}{}", RED, id_, address_, RESET);
                                             }
                                         }
-                                        Err(e) => eprintln!("failed to register {} at {}: {}", id_, address_, e),
+                                        Err(e) => eprintln!("{}failed to register {} at {}: {}{}", RED, id_, address_, e, RESET),
                                     }
                                 });
                             } else {
-                                println!("usage -> register/{{address}}/{{id}}");
+                                println!("{}usage -> register/{{address}}/{{id}}{}", ORANGE, RESET);
                             }
                         }
                         _ => {
-                            println!("commands -> monkeys  banana  level  register/{{address}}/{{id}}");
+                            println!("{}commands -> monkeys  banana  level  register/{{address}}/{{id}}{}", ORANGE, RESET);
                         }
                     }
                 }
@@ -269,9 +280,13 @@ impl Monkey {
         if parts.len() == 3 && parts[0] == "LEVEL" && parts[1] == "ACK" {
             let new_value = parts[2].parse::<f64>()?;
             *banana.lock().await = new_value;
+            println!(
+                "{}leveled banana with {} -> v={:.6}{}",
+                YELLOW, monkey_addr, new_value, RESET
+            );
             return Ok(());
         }
 
-        Err("Invalid LEVEL response".into())
+        Err("invalid LEVEL response".into())
     }
 }
