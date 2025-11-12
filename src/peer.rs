@@ -8,6 +8,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 
+//theme for cli
 const RED: &str = "\x1b[38;2;243;139;168m"; // #f38ba8
 const GREEN: &str = "\x1b[38;2;166;227;161m"; // #a6e3a1
 const YELLOW: &str = "\x1b[38;2;249;226;175m"; // #f9e2af
@@ -27,7 +28,7 @@ pub struct Monkey {
 }
 
 impl Monkey {
-    pub fn new_monkey(id: &str, address: &str) -> Self {
+    pub fn new_monkey(id: &str, address: &str, monkeys: HashMap<String, String>) -> Self {
         let (sender, receiver) = mpsc::unbounded_channel();
         Self {
             banana: Arc::new(Mutex::new(random::<f64>())),
@@ -35,7 +36,7 @@ impl Monkey {
             address: address.to_string(),
             sender,
             receiver: Arc::new(Mutex::new(receiver)),
-            monkeys: Arc::new(Mutex::new(HashMap::new())),
+            monkeys: Arc::new(Mutex::new(monkeys)),
         }
     }
 

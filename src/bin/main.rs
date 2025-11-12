@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use p2p_rust::peer::Monkey;
 
 #[tokio::main]
@@ -13,7 +15,7 @@ async fn main() {
     let id = &args[1];
     let address = &args[2];
 
-    let peer = Monkey::new_monkey(id, address);
+    let peer = Monkey::new_monkey(id, address, HashMap::new());
 
     println!("Starting peer {} on {}", id, address);
     println!("Commands: 'net', 'value', 'LINK/address/id'");
