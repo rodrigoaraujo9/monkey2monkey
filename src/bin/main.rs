@@ -1,26 +1,45 @@
-use std::collections::HashMap;
-
 use p2p_rust::peer::Monkey;
+use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    if args.len() != 3 {
-        eprintln!("Usage: {} <id> <address>", args[0]);
-        eprintln!("Example: {} peer1 127.0.0.1:8001", args[0]);
+    // Usage: program <id> <address> [peer_id:peer_address ...]
+    if args.len() < 3 {
+        eprintln!(
+            "usage -> {} <id> <address> [peer_id:peer_address ...]",
+            args[0]
+        );
+        eprintln!(
+            "example -> {} p1 127.0.0.1:8001 p2:127.0.0.1:8002 p3:127.0.0.1:8003",
+            args[0]
+        );
+        eprintln!("");
+        eprintln!(
+            "the peer will automatically attempt to register with the provided peers on startup."
+        );
         return;
     }
 
     let id = &args[1];
     let address = &args[2];
 
-    let peer = Monkey::new_monkey(id, address, HashMap::new());
+    let mut init_monkeys = HashMap::new();
+    for i in 3..args.len() {
+        let parts: Vec<&str> = args[i].split(':').collect();
+        if parts.len() >= 2 {
+            let monkey_id = parts[0].to_string();
+            let monkey_addr = parts[1..].join(":");
+            init_monkeys.insert(monkey_id, monkey_addr);
+        } else {
+            eprintln!("invalid monkey format '{}', expected 'id:address'", args[i]);
+        }
+    }
 
-    println!("Starting peer {} on {}", id, address);
-    println!("Commands: 'net', 'value', 'LINK/address/id'");
+    let peer = Monkey::new_monkey(id, address, init_monkeys.clone());
 
-    if let Err(e) = peer.initiate_monkey_buisness().await {
+    if let Err(e) = peer.initiate_monkey_business().await {
         eprintln!("Error: {}", e);
     }
 }

@@ -1,21 +1,25 @@
 use crate::{Rx, Tx};
+use rand::Rng;
+use rand::SeedableRng;
 use rand::random;
+use rand::rngs::StdRng;
+use rand::seq::IteratorRandom;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, stdin};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 
-//theme for cli
-const RED: &str = "\x1b[38;2;243;139;168m"; // #f38ba8
-const GREEN: &str = "\x1b[38;2;166;227;161m"; // #a6e3a1
-const YELLOW: &str = "\x1b[38;2;249;226;175m"; // #f9e2af
-const BLUE: &str = "\x1b[38;2;137;180;250m"; // #89b4fa
-const PURPLE: &str = "\x1b[38;2;203;166;247m"; // #cba6f7
-const AQUA: &str = "\x1b[38;2;148;226;213m"; // #94e2d5
-const ORANGE: &str = "\x1b[38;2;250;179;135m"; // #fab387
+const RED: &str = "\x1b[38;2;243;139;168m";
+const GREEN: &str = "\x1b[38;2;166;227;161m";
+const YELLOW: &str = "\x1b[38;2;249;226;175m";
+const BLUE: &str = "\x1b[38;2;137;180;250m";
+const PURPLE: &str = "\x1b[38;2;203;166;247m";
+const ORANGE: &str = "\x1b[38;2;250;179;135m";
 const RESET: &str = "\x1b[0m";
 
 pub struct Monkey {
@@ -40,14 +44,14 @@ impl Monkey {
         }
     }
 
-    pub async fn initiate_monkey_buisness(&self) -> Result<(), Box<dyn Error>> {
+    pub async fn initiate_monkey_business(&self) -> Result<(), Box<dyn Error>> {
         let listener = TcpListener::bind(&self.address).await?;
         let monkeys_ = self.monkeys.clone();
         let id_ = self.id.clone();
         let sender_ = self.sender.clone();
         let banana_ = self.banana.clone();
         tokio::spawn(async move {
-            let _ = Self::handle_incomming_monkeys(listener, monkeys_, id_, sender_, banana_).await;
+            let _ = Self::handle_incoming_monkeys(listener, monkeys_, id_, sender_, banana_).await;
         });
 
         let banana_ = self.banana.clone();
@@ -67,14 +71,45 @@ impl Monkey {
         banana: Arc<Mutex<f64>>,
         monkeys: Arc<Mutex<HashMap<String, String>>>,
         id: &str,
-        addr: &str,
-        sender: Tx,
+        _addr: &str,
+        _sender: Tx,
     ) {
-        println!("mock for interact with random monkey")
+        let lambda = 2.0 / 60.0; // 2 events/min
+        let mut rng = StdRng::from_entropy();
+
+        loop {
+            let u: f64 = rng.gen_range(std::f64::EPSILON..1.0);
+            let wait_secs = -u.ln() / lambda;
+
+            if let Some((monkey_id, addr)) =
+                Self::pick_random_monkey(monkeys.clone(), &mut rng).await
+            {
+                let my_banana = *banana.lock().await;
+                if let Err(e) = Self::level_bananas(&addr, &id, my_banana, banana.clone()).await {
+                    eprintln!(
+                        "{}attempt to level banana with {}@{} failed: {}{}",
+                        RED, monkey_id, addr, e, RESET
+                    );
+                }
+            } else {
+                println!("No monkeys available to contact.");
+            }
+            println!("random monkey (next in ~{wait_secs:.1}s)");
+            sleep(Duration::from_secs_f64(wait_secs)).await;
+        }
     }
 
-    //handle connections
-    pub async fn handle_incomming_monkeys(
+    pub async fn pick_random_monkey(
+        monkeys: Arc<Mutex<HashMap<String, String>>>,
+        rng: &mut StdRng,
+    ) -> Option<(String, String)> {
+        let map = monkeys.lock().await;
+        map.iter()
+            .choose(rng)
+            .map(|(id, addr)| (id.clone(), addr.clone()))
+    }
+
+    pub async fn handle_incoming_monkeys(
         listener: TcpListener,
         monkeys: Arc<Mutex<HashMap<String, String>>>,
         id: String,
@@ -84,8 +119,7 @@ impl Monkey {
         let my_addr = listener.local_addr()?.to_string();
         loop {
             match listener.accept().await {
-                Ok((socket, addr)) => {
-                    println!("{}incoming registration from {}{}", AQUA, addr, RESET);
+                Ok((socket, _addr)) => {
                     let monkeys_ = monkeys.clone();
                     let sender_ = sender.clone();
                     let banana_ = banana.clone();
@@ -109,7 +143,6 @@ impl Monkey {
         }
     }
 
-    //handle peer
     async fn keep_monkey_in_check(
         socket: TcpStream,
         monkeys: Arc<Mutex<HashMap<String, String>>>,
@@ -136,11 +169,19 @@ impl Monkey {
         match cmd {
             "REG" => {
                 if let (Some(address), Some(id)) = (parts.next(), parts.next()) {
-                    monkeys
-                        .lock()
-                        .await
-                        .insert(id.to_string(), address.to_string());
-                    let _ = sender.send(format!("registered {} at {}", id, address));
+                    let mut map = monkeys.lock().await;
+                    let changed = match map.get(id) {
+                        None => true,
+                        Some(old_addr) => old_addr != address,
+                    };
+                    map.insert(id.to_string(), address.to_string());
+                    drop(map);
+
+                    if changed {
+                        println!("{}registered {} at {}{}", GREEN, id, address, RESET);
+                        let _ = sender.send(format!("registered {} at {}", id, address));
+                    }
+
                     let response = format!("REG/ACK/{}/{}\n", my_addr, my_id);
                     let _ = writer.write_all(response.as_bytes()).await;
                 }
@@ -154,7 +195,7 @@ impl Monkey {
                             .write_all(format!("LEVEL/ACK/{:.12}\n", *current_banana).as_bytes())
                             .await;
                         let _ = sender.send(format!(
-                            "{}leveled banana with {} -> v={:.6}{}",
+                            "[IN]  {}leveled banana with {} -> v={:.6}{}",
                             YELLOW, monkey_id, *current_banana, RESET
                         ));
                     }
@@ -165,7 +206,6 @@ impl Monkey {
         Ok(())
     }
 
-    //handle communications
     async fn handle_monkey_interactions(&self) -> Result<(), Box<dyn Error>> {
         let mut stdin = BufReader::new(stdin()).lines();
         let receiver = self.receiver.clone();
@@ -202,7 +242,6 @@ impl Monkey {
                             }
                         }
                         _ if input.starts_with("register/") => {
-                            //LINK/{address}/{id}
                             let mut it = input.split('/');
                             let _ = it.next();
                             if let (Some(address), Some(id)) = (it.next(), it.next()) {
@@ -225,7 +264,6 @@ impl Monkey {
                                                 let mut tmp = String::new();
                                                 if r.read_line(&mut tmp).await.is_ok() {
                                                     let parts: Vec<&str> = tmp.trim().split('/').collect();
-                                                    // REG/ACK/addr/id
                                                     if parts.len() == 4 && parts[0] == "REG" && parts[1] == "ACK" {
                                                         let monkey_addr = parts[2];
                                                         let monkey_id = parts[3];
@@ -265,24 +303,21 @@ impl Monkey {
     ) -> Result<(), Box<dyn Error>> {
         let mut stream = TcpStream::connect(monkey_addr).await?;
 
-        // Send LEVEL request
         let request = format!("LEVEL/{}/{:.12}\n", my_id, current_banana);
         stream.write_all(request.as_bytes()).await?;
         stream.flush().await?;
 
-        // Read response
         let (r, _) = stream.into_split();
         let mut reader = BufReader::new(r);
         let mut response = String::new();
         reader.read_line(&mut response).await?;
 
-        // Parse LEVEL/ACK/new_value
         let parts: Vec<&str> = response.trim().split('/').collect();
         if parts.len() == 3 && parts[0] == "LEVEL" && parts[1] == "ACK" {
             let new_value = parts[2].parse::<f64>()?;
             *banana.lock().await = new_value;
             println!(
-                "{}leveled banana with {} -> v={:.6}{}",
+                "[OUT] {}leveled banana with {} -> v={:.6}{}",
                 YELLOW, monkey_addr, new_value, RESET
             );
             return Ok(());
