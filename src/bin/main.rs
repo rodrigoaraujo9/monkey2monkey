@@ -1,4 +1,4 @@
-use p2p_rust::peer::Peer;
+use p2p_rust::peer::Monkey;
 
 #[tokio::main]
 async fn main() {
@@ -13,12 +13,12 @@ async fn main() {
     let id = &args[1];
     let address = &args[2];
 
-    let peer = Peer::new(id, address);
+    let peer = Monkey::new_monkey(id, address);
 
     println!("Starting peer {} on {}", id, address);
-    println!("Commands: 'net', 'value', 'LINK:address:id'");
+    println!("Commands: 'net', 'value', 'LINK/address/id'");
 
-    if let Err(e) = peer.start().await {
+    if let Err(e) = peer.initiate_monkey_buisness().await {
         eprintln!("Error: {}", e);
     }
 }
