@@ -1,18 +1,17 @@
-use p2p_rust::monkey::Monkey;
+use p2p_rust::peer::Peer;
 use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
-
-    // Usage: program <id> <address> [monkey_id:monkey_address ...]
+    // Usage: program <id> <address> [peer_id:peer_address ...]
     if args.len() < 3 {
         eprintln!(
-            "usage -> {} <id> <address> [monkey_id:monkey_address ...]",
+            "usage -> {} <id> <address> [peer_id:peer_address ...]",
             args[0]
         );
         eprintln!(
-            "example -> {} monkey1 127.0.0.1:8001 monkey2:127.0.0.1:8002 monkey3:127.0.0.1:8003",
+            "example -> {} peer1 127.0.0.1:8001 peer2:127.0.0.1:8002 peer3:127.0.0.1:8003",
             args[0]
         );
         eprintln!("");
@@ -23,21 +22,21 @@ async fn main() {
     }
 
     let id = &args[1];
-    let address = &args[2];
+    let addr = &args[2];
+    let mut init_peers = HashMap::new();
 
-    let mut init_monkeys = HashMap::new();
     for i in 3..args.len() {
         let parts: Vec<&str> = args[i].split(':').collect();
         if parts.len() >= 2 {
-            let monkey_id = parts[0].to_string();
-            let monkey_addr = parts[1..].join(":");
-            init_monkeys.insert(monkey_id, monkey_addr);
+            let peer_id = parts[0].to_string();
+            let peer_addr = parts[1..].join(":");
+            init_peers.insert(peer_id, peer_addr);
         } else {
-            eprintln!("invalid monkey format '{}', expected 'id:address'", args[i]);
+            eprintln!("invalid peer format '{}', expected 'id:address'", args[i]);
         }
     }
 
-    let monkey = Monkey::new_monkey(id, address, init_monkeys.clone());
+    let peer = Peer::new(id, addr, init_peers.clone());
 
     println!("\n\n");
     print!("\x1B[2J\x1B[1;1H");
@@ -47,7 +46,7 @@ async fn main() {
     println!(r"/   ~\");
     println!("{}", id);
 
-    if let Err(e) = monkey.initiate_monkey_business().await {
+    if let Err(e) = peer.start().await {
         eprintln!("Error: {}", e);
     }
 }
