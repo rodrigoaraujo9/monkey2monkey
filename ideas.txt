@@ -1,19 +1,17 @@
-peer{
-ip
-port
-peers
-}
+--t1
+cargo run --release -- monkey1 127.0.0.1:8001 p2:127.0.0.1:8002
 
-peer{
-    new
+--t2
+cargo run --release -- monkey2 127.0.0.1:8002 p1:127.0.0.1:8001 p3:127.0.0.1:8003 p4:127.0.0.1:8004
 
-    listen
+--t3
+cargo run --release -- monkey3 127.0.0.1:8003 p2:127.0.0.1:8002 p4:127.0.0.1:8004
 
-    message
+--t4
+cargo run --release -- monkey4 127.0.0.1:8004 p2:127.0.0.1:8002 p3:127.0.0.1:8003 p5:127.0.0.1:8005 p6:127.0.0.1:8006
 
-    handle_conn
+--t5
+cargo run --release -- monkey5 127.0.0.1:8005 p4:127.0.0.1:8004
 
-    conn
-}
-
-main
+--t6
+cargo run --release -- monkey6 127.0.0.1:8006 p4:127.0.0.1:8004

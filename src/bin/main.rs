@@ -1,18 +1,18 @@
-use p2p_rust::peer::Monkey;
+use p2p_rust::monkey::Monkey;
 use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    // Usage: program <id> <address> [peer_id:peer_address ...]
+    // Usage: program <id> <address> [monkey_id:monkey_address ...]
     if args.len() < 3 {
         eprintln!(
-            "usage -> {} <id> <address> [peer_id:peer_address ...]",
+            "usage -> {} <id> <address> [monkey_id:monkey_address ...]",
             args[0]
         );
         eprintln!(
-            "example -> {} p1 127.0.0.1:8001 p2:127.0.0.1:8002 p3:127.0.0.1:8003",
+            "example -> {} monkey1 127.0.0.1:8001 monkey2:127.0.0.1:8002 monkey3:127.0.0.1:8003",
             args[0]
         );
         eprintln!("");
@@ -37,9 +37,17 @@ async fn main() {
         }
     }
 
-    let peer = Monkey::new_monkey(id, address, init_monkeys.clone());
+    let monkey = Monkey::new_monkey(id, address, init_monkeys.clone());
 
-    if let Err(e) = peer.initiate_monkey_business().await {
+    println!("\n\n");
+    print!("\x1B[2J\x1B[1;1H");
+    println!(r"  /~\");
+    println!(r" C oo");
+    println!(r" _( ^)");
+    println!(r"/   ~\");
+    println!("{}", id);
+
+    if let Err(e) = monkey.initiate_monkey_business().await {
         eprintln!("Error: {}", e);
     }
 }
