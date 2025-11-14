@@ -14,19 +14,19 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
 
 pub struct Peer {
-    state: Arc<Mutex<f64>>,
+    state: Arc<Mutex<f64>>, //value v reffered in the sheet
     id: String,
     addr: String,
-    tx: Tx,
-    rx: Arc<Mutex<Rx>>,
+    tx: Tx,             //sender
+    rx: Arc<Mutex<Rx>>, //receiver
     peers: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl Peer {
     pub fn new(id: &str, addr: &str, peers: HashMap<String, String>) -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::unbounded_channel(); //can run out of mem
         let mut rng = StdRng::from_entropy();
-        let r: f64 = rng.gen_range(f64::EPSILON..1.0);
+        let r: f64 = rng.gen_range(f64::EPSILON..1.0); //random initial state -> 0 < state <= 1
         Self {
             state: Arc::new(Mutex::new(r)),
             id: id.to_string(),
@@ -66,42 +66,47 @@ impl Peer {
     }
 
     pub async fn start(&self) -> Result<(), Box<dyn Error>> {
+        // display initial state
         println!("{}{:.6}{} \n", YELLOW, self.state.lock().await, RESET);
 
+        // bind TCP listener to peer's network address
+        // creates the server socket for accepting incoming connections
         let listener = TcpListener::bind(&self.addr).await?;
 
+        // clone Arc pointers for listener task ----> cheap
+        // each spawned task needs ownership of these values (static)
         let peers = Arc::clone(&self.peers);
         let id = self.id.clone();
         let tx = self.tx.clone();
         let state = Arc::clone(&self.state);
 
+        // spawn background task to accept incoming peer connections
+        // this task runs indefinitely, handling all incoming RPCs ----> REG and SYNC
         tokio::spawn(async move {
             let _ = Self::listen(listener, peers, id, tx, state).await;
         });
 
+        // clone Arc pointers for gossip task
         let state = Arc::clone(&self.state);
         let peers = Arc::clone(&self.peers);
         let id = self.id.clone();
-        let addr = self.addr.clone();
-        let tx = self.tx.clone();
+
+        // if there are known peers ----> start gossip protocol
+        // gossip task periodically initiates sync with random peers
         if peers.read().await.len() != 0 {
             tokio::spawn(async move {
-                Self::gossip(state, peers, &id, &addr, tx).await;
+                Self::gossip(state, peers, &id).await;
             });
         }
 
+        // enter main event loop ----> blocking
+        // handles user input and displays async messages from other tasks
         self.handle_input().await?;
         Ok(())
     }
 
-    async fn gossip(
-        state: Arc<Mutex<f64>>,
-        peers: Arc<RwLock<HashMap<String, String>>>,
-        id: &str,
-        _addr: &str,
-        _tx: Tx,
-    ) {
-        let lambda = 2.0 / 60.0;
+    async fn gossip(state: Arc<Mutex<f64>>, peers: Arc<RwLock<HashMap<String, String>>>, id: &str) {
+        let lambda = 2.0 / 60.0; // 2 events per minute
         let mut rng = StdRng::from_entropy();
 
         loop {
