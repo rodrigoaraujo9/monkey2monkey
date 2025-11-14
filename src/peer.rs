@@ -22,6 +22,8 @@ pub struct Peer {
 }
 
 impl Peer {
+    /// Creates peer with optional initial state
+    /// State defaults to random value in (ε, 1.0) if not provided
     pub fn new(id: &str, addr: &str, peers: HashMap<String, String>) -> Self {
         let (tx, rx) = mpsc::unbounded_channel(); //can run out of mem
         let mut rng = rand::rng();
@@ -64,6 +66,11 @@ impl Peer {
             .collect()
     }
 
+    /// Initializes peer:
+    /// - Binds server socket
+    /// - Spawns listener for incoming connections (REG/SYNC RPCs)
+    /// - Spawns gossip loop for periodic state sync
+    /// - Enters event loop for user input and async messages
     pub async fn start(&self) -> Result<(), Box<dyn Error>> {
         // display initial state
         println!("{}{:.6}{} \n", YELLOW, self.state.lock().await, RESET);
@@ -107,6 +114,9 @@ impl Peer {
         Ok(())
     }
 
+    /// Gossip loop - push-based epidemic broadcast.
+    /// Uses exponential distribution (λ=2/60) for delays, averages ~30s between rounds.
+    /// Selects random peer, syncs state, repeats forever.
     async fn gossip(
         state: Arc<Mutex<f64>>,
         peers: Arc<RwLock<HashMap<String, String>>>,
@@ -144,6 +154,7 @@ impl Peer {
         }
     }
 
+    /// Picks random peer from [peers] (uniform distribution).
     #[inline]
     pub async fn pick_peer(
         peers: &Arc<RwLock<HashMap<String, String>>>,
@@ -155,6 +166,8 @@ impl Peer {
             .map(|(id, addr)| (id.clone(), addr.clone()))
     }
 
+    /// Accepts incoming connections, spawns a handler per connection.
+    /// Handles REG and SYNC RPCs
     pub async fn listen(
         listener: TcpListener,
         peers: Arc<RwLock<HashMap<String, String>>>,
@@ -189,6 +202,14 @@ impl Peer {
         }
     }
 
+    /// Handles single connection - processes REG and SYNC RPCs
+    ///
+    /// REG: REG/<peer_addr>/<peer_id> -> REG/ACK/<my_addr>/<my_id>
+    ///      adds/updates peer in registry
+    ///
+    /// SYNC: SYNC/<peer_id>/<peer_state> -> SYNC/ACK/<new_state>
+    ///       averages states: (my_state + peer_state) / 2
+    ///       both peers converge to same value
     async fn handle_conn(
         socket: TcpStream,
         peers: &Arc<RwLock<HashMap<String, String>>>,
@@ -278,6 +299,8 @@ impl Peer {
         Ok(())
     }
 
+    /// Event loop - multiplexes user input and async messages
+    /// Commands: peers, state, register/<addr>/<id>
     async fn handle_input(&self) -> Result<(), Box<dyn Error>> {
         //async line for stdin
         let mut stdin = BufReader::new(stdin()).lines();
@@ -388,6 +411,8 @@ impl Peer {
         }
     }
 
+    /// Client-side SYNC: sends state, receives averaged result, updates local state
+    /// Both peers converge to (state1 + state2) / 2
     pub async fn sync(
         peer_addr: &str,
         my_id: &str,
