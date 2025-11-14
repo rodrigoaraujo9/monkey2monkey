@@ -340,18 +340,22 @@ impl Peer {
                                 //spawn task to perform registration handshake
                                 //non-blocking ---->  allows user to continue issuing commands
                                 tokio::spawn(async move {
+                                    // attempt to connect to target peer ----> TCP
                                     match TcpStream::connect(&target_addr).await {
                                         Ok(mut stream) => {
+                                            //send REG/<addr>/<id>
                                             let req = format!("REG/{}/{}\n", self_addr, self_id);
                                             if stream.write_all(req.as_bytes()).await.is_ok() && stream.flush().await.is_ok() {
                                                 let (r, _) = stream.into_split();
                                                 let mut reader = BufReader::new(r);
                                                 let mut buf = String::new();
                                                 if reader.read_line(&mut buf).await.is_ok() {
+                                                    //REG/ACK/<peer_addr>/<peer_id>
                                                     let parts: Vec<&str> = buf.trim().split('/').collect();
                                                     if parts.len() == 4 && parts[0] == "REG" && parts[1] == "ACK" {
                                                         let peer_addr = parts[2];
                                                         let peer_id = parts[3];
+                                                        // update peer registry with confirmed info
                                                         {
                                                             let mut map = peers.write().await;
                                                             map.insert(peer_id.to_string(), peer_addr.to_string());
@@ -375,6 +379,7 @@ impl Peer {
                             }
                         }
                         _ => {
+                            //display help ----> unknown command
                             println!("{}commands -> peers  state  register/{{address}}/{{id}}{}", ORANGE, RESET);
                         }
                     }
@@ -389,20 +394,27 @@ impl Peer {
         my_state: f64,
         state: &Arc<Mutex<f64>>,
     ) -> Result<(), Box<dyn Error>> {
+        // establish a TCP connection to peer
         let mut stream = TcpStream::connect(peer_addr).await?;
 
+        //sync request SYNC/<id>/<state>
         let req = format!("SYNC/{}/{:.12}\n", my_id, my_state);
         stream.write_all(req.as_bytes()).await?;
         stream.flush().await?;
 
+        //read response
         let (r, _) = stream.into_split();
         let mut reader = BufReader::new(r);
         let mut resp = String::new();
         reader.read_line(&mut resp).await?;
 
+        //SYNC/ACK/<new_state>
         let parts: Vec<&str> = resp.trim().split('/').collect();
         if parts.len() == 3 && parts[0] == "SYNC" && parts[1] == "ACK" {
+            //retrieve new state value
             let new_val = parts[2].parse::<f64>()?;
+
+            //update state with new value
             *state.lock().await = new_val;
             println!(
                 "[OUT] {}synced with {} -> {:.6}{}",
