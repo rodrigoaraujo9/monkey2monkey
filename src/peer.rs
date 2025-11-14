@@ -1,8 +1,7 @@
 use crate::{BLUE, GREEN, ORANGE, PURPLE, RED, RESET, Rx, Tx, YELLOW};
-use rand::Rng;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::seq::IteratorRandom;
+use rand::{Rng, RngCore, SeedableRng};
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
@@ -25,8 +24,8 @@ pub struct Peer {
 impl Peer {
     pub fn new(id: &str, addr: &str, peers: HashMap<String, String>) -> Self {
         let (tx, rx) = mpsc::unbounded_channel(); //can run out of mem
-        let mut rng = StdRng::from_entropy();
-        let r: f64 = rng.gen_range(f64::EPSILON..1.0); //random initial state -> 0 < state <= 1
+        let mut rng = rand::rng();
+        let r: f64 = rng.random_range(f64::EPSILON..1.0); //random initial state -> 0 < state <= 1
         Self {
             state: Arc::new(Mutex::new(r)),
             id: id.to_string(),
@@ -91,11 +90,14 @@ impl Peer {
         let peers = Arc::clone(&self.peers);
         let id = self.id.clone();
 
+        let mut seed: [u8; 32] = [0u8; 32];
+        rand::rng().fill_bytes(&mut seed);
+
         // if there are known peers ----> start gossip protocol
         // gossip task periodically initiates sync with random peers
         if peers.read().await.len() != 0 {
             tokio::spawn(async move {
-                Self::gossip(state, peers, &id).await;
+                Self::gossip(state, peers, &id, &mut seed).await;
             });
         }
 
@@ -105,12 +107,17 @@ impl Peer {
         Ok(())
     }
 
-    async fn gossip(state: Arc<Mutex<f64>>, peers: Arc<RwLock<HashMap<String, String>>>, id: &str) {
+    async fn gossip(
+        state: Arc<Mutex<f64>>,
+        peers: Arc<RwLock<HashMap<String, String>>>,
+        id: &str,
+        seed: &[u8; 32],
+    ) {
         let lambda = 2.0 / 60.0; // 2 events per minute
-        let mut rng = StdRng::from_entropy();
+        let mut rng = SmallRng::from_seed(*seed);
 
         loop {
-            let u: f64 = rng.gen_range(std::f64::EPSILON..1.0);
+            let u: f64 = rng.random_range(std::f64::EPSILON..1.0);
             let wait = -u.ln() / lambda;
 
             if let Some((peer_id, peer_addr)) = Self::pick_peer(&peers, &mut rng).await {
@@ -132,7 +139,7 @@ impl Peer {
     #[inline]
     pub async fn pick_peer(
         peers: &Arc<RwLock<HashMap<String, String>>>,
-        rng: &mut StdRng,
+        rng: &mut SmallRng,
     ) -> Option<(String, String)> {
         let map = peers.read().await;
         map.iter()
