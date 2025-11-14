@@ -24,12 +24,15 @@ pub struct Peer {
 impl Peer {
     /// Creates peer with optional initial state
     /// State defaults to random value in (ε, 1.0) if not provided
-    pub fn new(id: &str, addr: &str, peers: HashMap<String, String>) -> Self {
+    pub fn new(id: &str, addr: &str, peers: HashMap<String, String>, state: Option<f64>) -> Self {
         let (tx, rx) = mpsc::unbounded_channel(); //can run out of mem
-        let mut rng = rand::rng();
-        let r: f64 = rng.random_range(f64::EPSILON..1.0); //random initial state -> 0 < state <= 1
+
+        let init_state = state.unwrap_or_else(|| {
+            let mut rng = rand::rng();
+            rng.random_range(f64::EPSILON..1.0) //random initial state -> 0 < state <= 1
+        });
         Self {
-            state: Arc::new(Mutex::new(r)),
+            state: Arc::new(Mutex::new(init_state)),
             id: id.to_string(),
             addr: addr.to_string(),
             tx,

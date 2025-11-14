@@ -36,7 +36,7 @@ async fn main() {
         }
     }
 
-    let peer = Peer::new(id, addr, init_peers.clone());
+    let peer = Peer::new(id, addr, init_peers.clone(), None);
 
     println!("\n\n");
     print!("\x1B[2J\x1B[1;1H");
