@@ -14,17 +14,16 @@ use tokio::time::sleep;
 
 pub struct Peer {
     state: Arc<Mutex<f64>>, //value v reffered in the sheet (converges across network via gossip)
-    id: String,
-    addr: String,                                //IP:port
-    tx: Tx,                                      //sender
-    rx: Arc<Mutex<Rx>>,                          //receiver
-    peers: Arc<RwLock<HashMap<String, String>>>, //known peers ----> (id -> address mapping)
+    addr: String,           //IP:port
+    tx: Tx,                 //sender
+    rx: Arc<Mutex<Rx>>,     //receiver
+    peers: Arc<RwLock<HashMap<String, String>>>, //known peers ----> (address -> address mapping)
 }
 
 impl Peer {
     /// Creates peer with optional initial state
     /// State defaults to random value in (ε, 1.0) if not provided
-    pub fn new(id: &str, addr: &str, peers: HashMap<String, String>, state: Option<f64>) -> Self {
+    pub fn new(addr: &str, peers: HashMap<String, String>, state: Option<f64>) -> Self {
         let (tx, rx) = mpsc::unbounded_channel(); //can run out of mem
 
         let init_state = state.unwrap_or_else(|| {
@@ -33,17 +32,11 @@ impl Peer {
         });
         Self {
             state: Arc::new(Mutex::new(init_state)),
-            id: id.to_string(),
             addr: addr.to_string(),
             tx,
             rx: Arc::new(Mutex::new(rx)),
             peers: Arc::new(RwLock::new(peers)),
         }
-    }
-
-    #[inline]
-    pub fn id(&self) -> &str {
-        &self.id
     }
 
     #[inline]
@@ -61,12 +54,9 @@ impl Peer {
         *self.state.lock().await = val;
     }
 
-    pub async fn get_peers(&self) -> Vec<(String, String)> {
+    pub async fn get_peers(&self) -> Vec<String> {
         let peers = self.peers.read().await;
-        peers
-            .iter()
-            .map(|(id, addr)| (id.clone(), addr.clone()))
-            .collect()
+        peers.keys().cloned().collect()
     }
 
     /// Initializes peer:
@@ -85,20 +75,18 @@ impl Peer {
         // clone Arc pointers for listener task ----> cheap
         // each spawned task needs ownership of these values (static)
         let peers = Arc::clone(&self.peers);
-        let id = self.id.clone();
         let tx = self.tx.clone();
         let state = Arc::clone(&self.state);
 
         // spawn background task to accept incoming peer connections
         // this task runs indefinitely, handling all incoming RPCs ----> REG and SYNC
         tokio::spawn(async move {
-            let _ = Self::listen(listener, peers, id, tx, state).await;
+            let _ = Self::listen(listener, peers, tx, state).await;
         });
 
         // clone Arc pointers for gossip task
         let state = Arc::clone(&self.state);
         let peers = Arc::clone(&self.peers);
-        let id = self.id.clone();
 
         let mut seed: [u8; 32] = [0u8; 32];
         rand::rng().fill_bytes(&mut seed);
@@ -107,7 +95,7 @@ impl Peer {
         // gossip task periodically initiates sync with random peers
         if peers.read().await.len() != 0 {
             tokio::spawn(async move {
-                Self::gossip(state, peers, &id, &mut seed).await;
+                Self::gossip(state, peers, &mut seed).await;
             });
         }
 
@@ -123,7 +111,6 @@ impl Peer {
     async fn gossip(
         state: Arc<Mutex<f64>>,
         peers: Arc<RwLock<HashMap<String, String>>>,
-        id: &str,
         seed: &[u8; 32],
     ) {
         let lambda = 2.0 / 60.0; // 2 events per minute
@@ -137,15 +124,12 @@ impl Peer {
             let wait = -u.ln() / lambda;
 
             //select random known peer from set
-            if let Some((peer_id, peer_addr)) = Self::pick_peer(&peers, &mut rng).await {
+            if let Some(peer_addr) = Self::pick_peer(&peers, &mut rng).await {
                 let my_state = *state.lock().await;
 
                 //init sync with selected peer
-                if let Err(e) = Self::sync(&peer_addr, id, my_state, &state).await {
-                    eprintln!(
-                        "{}sync with {}@{} failed: {}{}",
-                        RED, peer_id, peer_addr, e, RESET
-                    );
+                if let Err(e) = Self::sync(&peer_addr, my_state, &state).await {
+                    eprintln!("{}sync with {} failed: {}{}", RED, peer_addr, e, RESET);
                 }
             } else {
                 println!("No peers available.");
@@ -162,11 +146,9 @@ impl Peer {
     pub async fn pick_peer(
         peers: &Arc<RwLock<HashMap<String, String>>>,
         rng: &mut SmallRng,
-    ) -> Option<(String, String)> {
+    ) -> Option<String> {
         let map = peers.read().await;
-        map.iter()
-            .choose(rng)
-            .map(|(id, addr)| (id.clone(), addr.clone()))
+        map.keys().choose(rng).cloned()
     }
 
     /// Accepts incoming connections, spawns a handler per connection.
@@ -174,7 +156,6 @@ impl Peer {
     pub async fn listen(
         listener: TcpListener,
         peers: Arc<RwLock<HashMap<String, String>>>,
-        id: String,
         tx: Tx,
         state: Arc<Mutex<f64>>,
     ) -> Result<(), Box<dyn Error>> {
@@ -188,13 +169,12 @@ impl Peer {
                     let peers = Arc::clone(&peers);
                     let tx = tx.clone();
                     let state = Arc::clone(&state);
-                    let id = id.clone();
                     let my_addr = my_addr.clone();
 
                     //spawn a task to handle the connection caught independently ----> runs concurrently with accept loop
                     tokio::spawn(async move {
                         if let Err(e) =
-                            Self::handle_conn(socket, &peers, &state, &tx, &id, &my_addr).await
+                            Self::handle_conn(socket, &peers, &state, &tx, &my_addr).await
                         {
                             eprintln!("{}conn error: {}{}", RED, e, RESET);
                         }
@@ -207,10 +187,10 @@ impl Peer {
 
     /// Handles single connection - processes REG and SYNC RPCs
     ///
-    /// REG: REG/<peer_addr>/<peer_id> -> REG/ACK/<my_addr>/<my_id>
+    /// REG: REG/<peer_addr> -> REG/ACK/<my_addr>
     ///      adds/updates peer in registry
     ///
-    /// SYNC: SYNC/<peer_id>/<peer_state> -> SYNC/ACK/<new_state>
+    /// SYNC: SYNC/<peer_addr>/<peer_state> -> SYNC/ACK/<new_state>
     ///       averages states: (my_state + peer_state) / 2
     ///       both peers converge to same value
     async fn handle_conn(
@@ -218,7 +198,6 @@ impl Peer {
         peers: &Arc<RwLock<HashMap<String, String>>>,
         state: &Arc<Mutex<f64>>,
         tx: &Tx,
-        my_id: &str,
         my_addr: &str,
     ) -> Result<(), Box<dyn Error>> {
         //split communication into read and write halves ----> independant
@@ -242,38 +221,35 @@ impl Peer {
         //dispatch based on command
         match cmd {
             "REG" => {
-                //REG/<peer_addr>/<peer_id>
-                if let (Some(addr), Some(id)) = (parts.next(), parts.next()) {
+                //REG/<peer_addr>
+                if let Some(addr) = parts.next() {
                     //check if peer (in [peers]) needs reg or update addr
                     let needs_update = {
                         //read lock
                         let map = peers.read().await;
-                        match map.get(id) {
-                            None => true,             //new peer ----> register
-                            Some(old) => old != addr, // address changed ----> update
-                        }
+                        !map.contains_key(addr)
                     };
                     //read unlock ----> end of closure
 
                     if needs_update {
                         // write lock
                         let mut map = peers.write().await;
-                        map.insert(id.to_string(), addr.to_string());
+                        map.insert(addr.to_string(), addr.to_string());
                         drop(map); // unlock ----> explicit
 
                         //notify
-                        println!("{}registered {} at {}{}", GREEN, id, addr, RESET);
-                        let _ = tx.send(format!("registered {} at {}", id, addr));
+                        println!("{}registered {}{}", GREEN, addr, RESET);
+                        let _ = tx.send(format!("registered {}", addr));
                     }
 
                     // Send ACK response with our contact info ----> for him to register this peer
-                    let resp = format!("REG/ACK/{}/{}\n", my_addr, my_id);
+                    let resp = format!("REG/ACK/{}\n", my_addr);
                     w.write_all(resp.as_bytes()).await?;
                 }
             }
             "SYNC" => {
-                //SYNC/<peer_id>/<peer_state>
-                if let (Some(peer_id), Some(v_str)) = (parts.next(), parts.next()) {
+                //SYNC/<peer_addr>/<peer_state>
+                if let (Some(peer_addr), Some(v_str)) = (parts.next(), parts.next()) {
                     if let Ok(peer_state) = v_str.parse::<f64>() {
                         //compute and apply state average (gossip convergence)
                         let new_val = {
@@ -292,7 +268,7 @@ impl Peer {
                         //notify
                         let _ = tx.send(format!(
                             "[IN]  {}synced with {} -> {:.6}{}",
-                            YELLOW, peer_id, new_val, RESET
+                            YELLOW, peer_addr, new_val, RESET
                         ));
                     }
                 }
@@ -303,7 +279,7 @@ impl Peer {
     }
 
     /// Event loop - multiplexes user input and async messages
-    /// Commands: peers, state, register/<addr>/<id>
+    /// Commands: peers, state, register/<addr>
     async fn handle_input(&self) -> Result<(), Box<dyn Error>> {
         //async line for stdin
         let mut stdin = BufReader::new(stdin()).lines();
@@ -340,7 +316,7 @@ impl Peer {
                                 let map = self.peers.read().await;
                                 map.keys().cloned().collect()
                             };
-                            println!("{}{} knows {:?}{}", BLUE, self.id, known, RESET);
+                            println!("{}{} knows {:?}{}", BLUE, self.addr, known, RESET);
                         }
                         "state" => {
                             //display current state value ----> snapshot
@@ -348,18 +324,16 @@ impl Peer {
                             println!("{}current state: {:.6}{}", YELLOW, s, RESET);
                         }
                         _ if input.starts_with("register/") => {
-                            //register/<addr>/<id>
+                            //register/<addr>
                             let mut it = input.split('/');
                             let _ = it.next(); //skip prefix ----> "register"
-                            if let (Some(addr), Some(id)) = (it.next(), it.next()) {
-                                println!("{}registering {} at {}{}", PURPLE, id, addr, RESET);
+                            if let Some(addr) = it.next() {
+                                println!("{}registering {}{}", PURPLE, addr, RESET);
 
                                 //same clone logic
                                 let target_addr = addr.to_string();
                                 let self_addr = self.addr.clone();
-                                let self_id = self.id.clone();
                                 let peers = Arc::clone(&self.peers);
-                                let target_id = id.to_string();
                                 let target_addr2 = addr.to_string();
 
 
@@ -369,44 +343,43 @@ impl Peer {
                                     // attempt to connect to target peer ----> TCP
                                     match TcpStream::connect(&target_addr).await {
                                         Ok(mut stream) => {
-                                            //send REG/<addr>/<id>
-                                            let req = format!("REG/{}/{}\n", self_addr, self_id);
+                                            //send REG/<addr>
+                                            let req = format!("REG/{}\n", self_addr);
                                             if stream.write_all(req.as_bytes()).await.is_ok() && stream.flush().await.is_ok() {
                                                 let (r, _) = stream.into_split();
                                                 let mut reader = BufReader::new(r);
                                                 let mut buf = String::new();
                                                 if reader.read_line(&mut buf).await.is_ok() {
-                                                    //REG/ACK/<peer_addr>/<peer_id>
+                                                    //REG/ACK/<peer_addr>
                                                     let parts: Vec<&str> = buf.trim().split('/').collect();
-                                                    if parts.len() == 4 && parts[0] == "REG" && parts[1] == "ACK" {
+                                                    if parts.len() == 3 && parts[0] == "REG" && parts[1] == "ACK" {
                                                         let peer_addr = parts[2];
-                                                        let peer_id = parts[3];
                                                         // update peer registry with confirmed info
                                                         {
                                                             let mut map = peers.write().await;
-                                                            map.insert(peer_id.to_string(), peer_addr.to_string());
+                                                            map.insert(peer_addr.to_string(), peer_addr.to_string());
                                                         }
-                                                        println!("{}registered {} at {}{}", GREEN, peer_id, peer_addr, RESET);
+                                                        println!("{}registered {}{}", GREEN, peer_addr, RESET);
                                                     } else {
                                                         eprintln!("{}invalid response from {}{}", RED, target_addr2, RESET);
                                                     }
                                                 } else {
-                                                    eprintln!("{}no ACK from {} at {}{}", RED, target_id, target_addr2, RESET);
+                                                    eprintln!("{}no ACK from {}{}", RED, target_addr2, RESET);
                                                 }
                                             } else {
-                                                eprintln!("{}failed to send REG to {} at {}{}", RED, target_id, target_addr2, RESET);
+                                                eprintln!("{}failed to send REG to {}{}", RED, target_addr2, RESET);
                                             }
                                         }
-                                        Err(e) => eprintln!("{}failed to register {} at {}: {}{}", RED, target_id, target_addr2, e, RESET),
+                                        Err(e) => eprintln!("{}failed to register {}: {}{}", RED, target_addr2, e, RESET),
                                     }
                                 });
                             } else {
-                                println!("{}usage -> register/{{address}}/{{id}}{}", ORANGE, RESET);
+                                println!("{}usage -> register/{{address}}{}", ORANGE, RESET);
                             }
                         }
                         _ => {
                             //display help ----> unknown command
-                            println!("{}commands -> peers  state  register/{{address}}/{{id}}{}", ORANGE, RESET);
+                            println!("{}commands -> peers  state  register/{{address}}{}", ORANGE, RESET);
                         }
                     }
                 }
@@ -418,15 +391,14 @@ impl Peer {
     /// Both peers converge to (state1 + state2) / 2
     pub async fn sync(
         peer_addr: &str,
-        my_id: &str,
         my_state: f64,
         state: &Arc<Mutex<f64>>,
     ) -> Result<(), Box<dyn Error>> {
         // establish a TCP connection to peer
         let mut stream = TcpStream::connect(peer_addr).await?;
 
-        //sync request SYNC/<id>/<state>
-        let req = format!("SYNC/{}/{:.12}\n", my_id, my_state);
+        //sync request SYNC/<addr>/<state>
+        let req = format!("SYNC/{}/{:.12}\n", peer_addr, my_state);
         stream.write_all(req.as_bytes()).await?;
         stream.flush().await?;
 
