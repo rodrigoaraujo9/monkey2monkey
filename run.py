@@ -39,7 +39,7 @@ def make_network(n):
     with open("docker-compose.yml", "w") as f:
         f.write(compose)
 
-    print(f"network with {n} peers created")
+    return compose
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -48,6 +48,7 @@ if __name__ == "__main__":
 
     n = int(sys.argv[1])
     make_network(n)
+    print(f"network with {n} peers created")
 
     if len(sys.argv) > 2 and sys.argv[2] == "start":
         subprocess.run(["docker", "compose", "up"])
