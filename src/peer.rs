@@ -336,7 +336,6 @@ impl Peer {
                                 let peers = Arc::clone(&self.peers);
                                 let target_addr2 = addr.to_string();
 
-
                                 //spawn task to perform registration handshake
                                 //non-blocking ---->  allows user to continue issuing commands
                                 tokio::spawn(async move {
