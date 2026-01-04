@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
 
 pub struct Peer {
-    state: Arc<Mutex<f64>>, //value v reffered in the sheet (converges across network via gossip)
+    state: Arc<Mutex<f64>>, //value v reffered in the sheet (converges across network via anti entropy)
     addr: String,           //IP:port
     tx: Tx,                 //sender
     rx: Arc<Mutex<Rx>>,     //receiver
@@ -62,7 +62,7 @@ impl Peer {
     /// Initializes peer:
     /// - Binds server socket
     /// - Spawns listener for incoming connections (REG/SYNC RPCs)
-    /// - Spawns gossip loop for periodic state sync
+    /// - Spawns anti entropy loop for periodic state sync
     /// - Enters event loop for user input and async messages
     pub async fn start(&self) -> Result<(), Box<dyn Error>> {
         // display initial state
@@ -84,18 +84,18 @@ impl Peer {
             let _ = Self::listen(listener, peers, tx, state).await;
         });
 
-        // clone Arc pointers for gossip task
+        // clone Arc pointers for anti entropy task
         let state = Arc::clone(&self.state);
         let peers = Arc::clone(&self.peers);
 
         let mut seed: [u8; 32] = [0u8; 32];
         rand::rng().fill_bytes(&mut seed);
 
-        // if there are known peers ----> start gossip protocol
-        // gossip task periodically initiates sync with random peers
+        // if there are known peers ----> start anti entropy protocol
+        // anti entropy task periodically initiates sync with random peers
         if peers.read().await.len() != 0 {
             tokio::spawn(async move {
-                Self::gossip(state, peers, &mut seed).await;
+                Self::anti_entropy(state, peers, &mut seed).await;
             });
         }
 
@@ -105,10 +105,10 @@ impl Peer {
         Ok(())
     }
 
-    /// Gossip loop - push-based epidemic broadcast.
+    /// Anti entropy loop - push-based epidemic broadcast.
     /// Uses exponential distribution (λ=2/60) for delays, averages ~30s between rounds.
     /// Selects random peer, syncs state, repeats forever.
-    async fn gossip(
+    async fn anti_entropy(
         state: Arc<Mutex<f64>>,
         peers: Arc<RwLock<HashMap<String, String>>>,
         seed: &[u8; 32],
@@ -134,9 +134,9 @@ impl Peer {
             } else {
                 println!("No peers available.");
             }
-            println!("      gossip (next in ~{wait:.1}s)");
+            println!("      anti entropy (next in ~{wait:.1}s)");
 
-            //sleep until next gossip round ----> exponentially distributed interval
+            //sleep until next anti entropy round ----> exponentially distributed interval
             sleep(Duration::from_secs_f64(wait)).await;
         }
     }
@@ -251,7 +251,7 @@ impl Peer {
                 //SYNC/<peer_addr>/<peer_state>
                 if let (Some(peer_addr), Some(v_str)) = (parts.next(), parts.next()) {
                     if let Ok(peer_state) = v_str.parse::<f64>() {
-                        //compute and apply state average (gossip convergence)
+                        //compute and apply state average (anti entropy convergence)
                         let new_val = {
                             //aquire mutex to read and update state ----> atomically
                             let mut s = state.lock().await;
