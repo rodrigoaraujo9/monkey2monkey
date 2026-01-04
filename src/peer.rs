@@ -247,6 +247,7 @@ impl Peer {
                     w.write_all(resp.as_bytes()).await?;
                 }
             }
+            //push-pull logic
             "SYNC" => {
                 //SYNC/<peer_addr>/<peer_state>
                 if let (Some(peer_addr), Some(v_str)) = (parts.next(), parts.next()) {
@@ -386,7 +387,7 @@ impl Peer {
         }
     }
 
-    /// Client-side SYNC: sends state, receives averaged result, updates local state
+    /// Client-side Push-Pull: sends state, receives averaged result, updates local state
     /// Both peers converge to (state1 + state2) / 2
     pub async fn sync(
         peer_addr: &str,
