@@ -190,7 +190,7 @@ impl Peer {
     /// REG: REG/<peer_addr> -> REG/ACK/<my_addr>
     ///      adds/updates peer in registry
     ///
-    /// SYNC: SYNC/<peer_addr>/<peer_state> -> SYNC/ACK/<new_state>
+    /// SYNC: SYNC/<peer_state> -> SYNC/ACK/<new_state>
     ///       averages states: (my_state + peer_state) / 2
     ///       both peers converge to same value
     async fn handle_conn(
@@ -249,8 +249,8 @@ impl Peer {
             }
             //push-pull logic
             "SYNC" => {
-                //SYNC/<peer_addr>/<peer_state>
-                if let (Some(peer_addr), Some(v_str)) = (parts.next(), parts.next()) {
+                //SYNC/<peer_state>
+                if let Some(v_str) = parts.next() {
                     if let Ok(peer_state) = v_str.parse::<f64>() {
                         //compute and apply state average (anti entropy convergence)
                         let new_val = {
@@ -268,8 +268,8 @@ impl Peer {
 
                         //notify
                         let _ = tx.send(format!(
-                            "[IN]  {}synced with {} -> {:.6}{}",
-                            YELLOW, peer_addr, new_val, RESET
+                            "[IN]  {}synchronized -> {:.6}{}",
+                            YELLOW, new_val, RESET
                         ));
                     }
                 }
@@ -397,8 +397,8 @@ impl Peer {
         // establish a TCP connection to peer
         let mut stream = TcpStream::connect(peer_addr).await?;
 
-        //sync request SYNC/<addr>/<state>
-        let req = format!("SYNC/{}/{:.12}\n", peer_addr, my_state);
+        //sync request SYNC/<state>
+        let req = format!("SYNC/{:.12}\n", my_state);
         stream.write_all(req.as_bytes()).await?;
         stream.flush().await?;
 
@@ -417,7 +417,7 @@ impl Peer {
             //update state with new value
             *state.lock().await = new_val;
             println!(
-                "[OUT] {}synced with {} -> {:.6}{}",
+                "[OUT] {}synchronized with {} -> {:.6}{}",
                 YELLOW, peer_addr, new_val, RESET
             );
             return Ok(());
