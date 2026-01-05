@@ -113,7 +113,7 @@ impl Peer {
         peers: Arc<RwLock<HashMap<String, String>>>,
         seed: &[u8; 32],
     ) {
-        let lambda = 2.0 / 60.0; // 2 events per minute
+        let lambda = 60.0 / 60.0; // 2 events per minute
         let mut rng = SmallRng::from_seed(*seed);
 
         loop {
