@@ -221,28 +221,19 @@ impl Peer {
         //dispatch based on command
         match cmd {
             "REG" => {
-                //REG/<peer_addr>
                 if let Some(addr) = parts.next() {
-                    //check if peer (in [peers]) needs reg or update addr
-                    let needs_update = {
-                        //read lock
-                        let map = peers.read().await;
-                        !map.contains_key(addr)
-                    };
-                    //read unlock ----> end of closure
-
-                    if needs_update {
-                        // write lock
-                        let mut map = peers.write().await;
+                    let mut map = peers.write().await;
+                    let is_new = !map.contains_key(addr);
+                    if is_new {
                         map.insert(addr.to_string(), addr.to_string());
-                        drop(map); // unlock ----> explicit
+                    }
+                    drop(map);
 
-                        //notify
+                    if is_new {
                         println!("{}registered {}{}", GREEN, addr, RESET);
                         let _ = tx.send(format!("registered {}", addr));
                     }
 
-                    // Send ACK response with our contact info ----> for him to register this peer
                     let resp = format!("REG/ACK/{}\n", my_addr);
                     w.write_all(resp.as_bytes()).await?;
                 }

@@ -1,7 +1,7 @@
 services:
   peer0:
     build: .
-    command: ["0.0.0.0:8000", "peer1:8001", "peer2:8002", "peer4:8004", "peer6:8006", "peer10:8010", "peer7:8007", "peer8:8008", "1.0"]
+    command: ["0.0.0.0:8000", "peer1:8001", "1.0"]
     networks:
       - net
     ports:
@@ -9,7 +9,7 @@ services:
 
   peer1:
     build: .
-    command: ["0.0.0.0:8001", "peer0:8000", "peer2:8002", "peer8:8008", "peer10:8010", "1e-09"]
+    command: ["0.0.0.0:8001", "peer0:8000", "peer2:8002", "1e-09"]
     networks:
       - net
     ports:
@@ -17,107 +17,11 @@ services:
 
   peer2:
     build: .
-    command: ["0.0.0.0:8002", "peer0:8000", "peer3:8003", "peer1:8001", "peer8:8008", "peer12:8012", "1e-09"]
+    command: ["0.0.0.0:8002", "peer1:8001", "1e-09"]
     networks:
       - net
     ports:
       - "8002:8002"
-
-  peer3:
-    build: .
-    command: ["0.0.0.0:8003", "peer2:8002", "peer5:8005", "peer8:8008", "peer12:8012", "1e-09"]
-    networks:
-      - net
-    ports:
-      - "8003:8003"
-
-  peer4:
-    build: .
-    command: ["0.0.0.0:8004", "peer0:8000", "peer9:8009", "peer14:8014", "peer5:8005", "peer10:8010", "peer12:8012", "peer14:8014", "1e-09"]
-    networks:
-      - net
-    ports:
-      - "8004:8004"
-
-  peer5:
-    build: .
-    command: ["0.0.0.0:8005", "peer3:8003", "peer8:8008", "peer12:8012", "peer4:8004", "peer7:8007", "peer12:8012", "peer13:8013", "peer14:8014", "1e-09"]
-    networks:
-      - net
-    ports:
-      - "8005:8005"
-
-  peer6:
-    build: .
-    command: ["0.0.0.0:8006", "peer0:8000", "peer7:8007", "peer9:8009", "peer12:8012", "1e-09"]
-    networks:
-      - net
-    ports:
-      - "8006:8006"
-
-  peer7:
-    build: .
-    command: ["0.0.0.0:8007", "peer6:8006", "peer13:8013", "peer0:8000", "peer5:8005", "peer9:8009", "peer14:8014", "1e-09"]
-    networks:
-      - net
-    ports:
-      - "8007:8007"
-
-  peer8:
-    build: .
-    command: ["0.0.0.0:8008", "peer5:8005", "peer0:8000", "peer1:8001", "peer2:8002", "peer3:8003", "peer10:8010", "peer11:8011", "peer12:8012", "peer13:8013", "1e-09"]
-    networks:
-      - net
-    ports:
-      - "8008:8008"
-
-  peer9:
-    build: .
-    command: ["0.0.0.0:8009", "peer4:8004", "peer11:8011", "peer6:8006", "peer7:8007", "peer10:8010", "1e-09"]
-    networks:
-      - net
-    ports:
-      - "8009:8009"
-
-  peer10:
-    build: .
-    command: ["0.0.0.0:8010", "peer0:8000", "peer1:8001", "peer4:8004", "peer8:8008", "peer9:8009", "peer12:8012", "1e-09"]
-    networks:
-      - net
-    ports:
-      - "8010:8010"
-
-  peer11:
-    build: .
-    command: ["0.0.0.0:8011", "peer9:8009", "peer8:8008", "1e-09"]
-    networks:
-      - net
-    ports:
-      - "8011:8011"
-
-  peer12:
-    build: .
-    command: ["0.0.0.0:8012", "peer5:8005", "peer2:8002", "peer3:8003", "peer4:8004", "peer5:8005", "peer6:8006", "peer8:8008", "peer10:8010", "peer14:8014", "1e-09"]
-    networks:
-      - net
-    ports:
-      - "8012:8012"
-
-  peer13:
-    build: .
-    command: ["0.0.0.0:8013", "peer7:8007", "peer5:8005", "peer8:8008", "1e-09"]
-    networks:
-      - net
-    ports:
-      - "8013:8013"
-
-  peer14:
-    build: .
-    command: ["0.0.0.0:8014", "peer4:8004", "peer4:8004", "peer5:8005", "peer7:8007", "peer12:8012", "1e-09"]
-    networks:
-      - net
-    ports:
-      - "8014:8014"
 
 networks:
   net:
