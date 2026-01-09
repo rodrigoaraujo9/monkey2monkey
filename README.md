@@ -1,6 +1,6 @@
-# Data Aggregation
+# monkey2monkey (Data Aggregation)
 
-Distributed state synchronization I built for distributed systems class. Uses push-pull gossip with exponential anti-entropy to converge peer states across the network.
+Distributed state synchronization I built for distributed systems class in Rust. Uses push-pull gossip with exponential anti-entropy to converge peer states across the network.
 
 ## What it does
 
