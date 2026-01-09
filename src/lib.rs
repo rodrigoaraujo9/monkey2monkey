@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-pub mod monkey;
+pub mod peer;
 
 type Tx = mpsc::UnboundedSender<String>;
 type Rx = mpsc::UnboundedReceiver<String>;
