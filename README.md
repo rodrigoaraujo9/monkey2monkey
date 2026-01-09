@@ -1,4 +1,4 @@
-# Anti-Entropy Gossip Protocol
+# Data Aggregation
 
 Distributed state synchronization using push-pull gossip with exponential anti-entropy.
 
